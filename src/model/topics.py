@@ -63,31 +63,24 @@ nmf_topic_labels = [
 #     'none'
 ]
 
-stemmer = WordNetLemmatizer()
 mwe_tokenizer = MWETokenizer(multi_words)
-
-class StemmedCountVectorizer(CountVectorizer):
-    def build_analyzer(self):
-        analyzer = super(StemmedCountVectorizer, self).build_analyzer()
-        return lambda doc: ([stemmer.lemmatize(w) for w in analyzer(doc)])
-
 def complete_tokenizer(x):
     return mwe_tokenizer.tokenize(word_tokenize(x))
 
-with open('../../data/interim/rDemocrats_CV.pickle', 'rb') as read_file:
-    cv_dems = pickle.load(read_file)
-
-with open('../../data/interim/rDemocrats_nmf.pickle', 'rb') as read_file:
-    nmf_dems = pickle.load(read_file)
+stemmer = WordNetLemmatizer()
+class StemmedCountVectorizer(CountVectorizer):
+  def build_analyzer(self):
+      analyzer = super(StemmedCountVectorizer, self).build_analyzer()
+      return lambda doc: ([stemmer.lemmatize(w) for w in analyzer(doc)])
 
 def get_topic_label(row):
     topic_weights = row['2016_election_frustration':'miltary_and_immigration']
-    per_word = topic_weights / row['word_count']
-    if np.max(per_word) > 0.0003:
-        return nmf_topic_labels[np.argmax(topic_weights)]
+    primary_topic = nmf_topic_labels[np.argmax(topic_weights)]
+    if 'word_count' in row:
+      per_word = topic_weights / row['word_count']
+      return primary_topic if np.max(per_word) > 0.0003 else 'none'
     else:
-        return 'none'
-
+      return primary_topic
 
 def label_primary_topic(df):
     df_ = df.copy()
@@ -95,9 +88,14 @@ def label_primary_topic(df):
     return df_
 
 def process(df):
-    data_clean = df.copy()
-    data_clean.text = data_clean.text.map(process_text)
+    with open('../../data/interim/rDemocrats_CV.pickle', 'rb') as read_file:
+      cv_dems = pickle.load(read_file)
 
+    with open('../../data/interim/rDemocrats_nmf.pickle', 'rb') as read_file:
+        nmf_dems = pickle.load(read_file)
+
+    data_clean = df.copy()
+    data_clean.text = data_clean.text.map(lambda t: process_text(t) if type(t) == str else process_text(' '.join(t)))
     data_cv = cv_dems.transform(data_clean.text)
     data_dtm_raw = pd.DataFrame(data_cv.toarray(), columns=cv_dems.get_feature_names())
     data_dtm_raw.index = data_clean.index
